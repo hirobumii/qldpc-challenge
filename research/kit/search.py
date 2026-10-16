@@ -5,7 +5,9 @@ The constructors in this kit build one code at a time; this module sweeps a
 standard three stages:
 
     1. generate   candidate (HX, HZ) from a family (a sampler/enumerator)
-    2. screen     skip k < min_k; estimate d with the surrogate; score by k*d^2/n
+    2. screen     drop a direct sum or a code the board already holds
+                  (``prescreen``); skip k < min_k; estimate d with the
+                  surrogate; score by k*d^2/n
     3. rank       sort by efficiency and/or extract the Pareto frontier
 
 The default path is pure numpy. ``surrogate.distance_rand`` also supports an
@@ -28,6 +30,7 @@ import os
 import numpy as np
 
 from css import compute_k, verify_css, rref
+from prescreen import block_structure, board_index, identity, lookup
 from surrogate import distance_rand, prepare_distance_search
 from bb import build_bb
 from group_algebra import (alt, build_2bga, build_bbga, cyclic_product, dihedral,
@@ -53,19 +56,86 @@ def fingerprint(HX, HZ):
     return hashlib.sha256(b).hexdigest()[:16]
 
 
-def _screen_one(job):
-    """Score one candidate. Module level so a process pool can pickle it.
+PREPASS_COUNTS = ("candidates", "rejected_not_css", "rejected_k",
+                  "rejected_repeat", "rejected_disconnected",
+                  "rejected_board_exact", "rejected_board_wl",
+                  "flagged_board_wl")
 
-    The seed is derived from the code's own fingerprint, so a candidate gets
+
+def _board_setup(board, index, audit):
+    """Resolve the board arguments of ``screen`` and ``screen_adaptive``.
+
+    Returns the tally (the caller's ``audit`` or a private dict, every count
+    present) and the board index to look candidates up in, loaded once per
+    process by ``prescreen.board_index`` unless the caller injected one.
+    """
+    if board not in (None, "flag", "drop"):
+        raise ValueError('board must be None, "flag", or "drop"')
+    tally = audit if audit is not None else {}
+    for key in PREPASS_COUNTS:
+        tally.setdefault(key, 0)
+    if board is not None and index is None:
+        index = board_index()
+    return tally, index
+
+
+def _prepass(candidates, *, min_k, board, index, tally):
+    """Apply the checks every candidate faces before the distance screen is spent on it.
+
+    They are (issue #3620): CSS commutation, ``k >= min_k``, not a repeat of
+    a code already seen in this sweep, one connected code
+    (``prescreen.block_structure``), and not a code the board already holds
+    (``prescreen.lookup``). An exact board duplicate is dropped under either
+    ``board`` mode; a WL-signature match is dropped under ``"drop"`` and
+    carried as ``board_wl`` under ``"flag"``, since WL is a necessary
+    condition for equivalence and not a proof of it. Every outcome is
+    counted in ``tally`` under the ``PREPASS_COUNTS`` keys.
+
+    Yields ``(spec, HX, HZ, k, fingerprint, board_wl)``.
+    """
+    seen = set()
+    for spec, HX, HZ in candidates:
+        tally["candidates"] += 1
+        if not verify_css(HX, HZ):
+            tally["rejected_not_css"] += 1
+            continue
+        k = compute_k(HX, HZ)
+        if k < min_k:
+            tally["rejected_k"] += 1
+            continue
+        ident = identity(HX, HZ)
+        fp = ident["fingerprint"]
+        if fp in seen:
+            tally["rejected_repeat"] += 1
+            continue
+        seen.add(fp)
+        if not block_structure(HX, HZ)["connected"]:
+            tally["rejected_disconnected"] += 1
+            continue
+        wl = None
+        if board is not None:
+            match = lookup(ident, index)
+            if match["exact"]:
+                tally["rejected_board_exact"] += 1
+                continue
+            wl = match["wl"]
+            if wl is not None:
+                if board == "drop":
+                    tally["rejected_board_wl"] += 1
+                    continue
+                tally["flagged_board_wl"] += 1
+        yield spec, HX, HZ, int(k), fp, wl
+
+
+def _screen_one(job):
+    """Score one pre-passed candidate.
+
+    Module level so a process pool can pickle it. The seed is derived from
+    the code's own fingerprint, so a candidate gets
     the same trials wherever it runs and whatever order it arrives in.
     """
-    spec, HX, HZ, min_k, min_d, trials, seed, backend, threads, distance, dkw = job
-    if not verify_css(HX, HZ):
-        return None
-    k = compute_k(HX, HZ)
-    if k < min_k:
-        return None
-    fp = fingerprint(HX, HZ)
+    (spec, HX, HZ, k, fp, wl, min_d, trials, seed, backend, threads,
+     distance, dkw) = job
     if distance is None:
         d = distance_rand(HX, HZ, trials=trials, seed=seed + int(fp, 16),
                           backend=backend, threads=threads)
@@ -79,8 +149,11 @@ def _screen_one(job):
     n = int(HX.shape[1])
     w = int(max(max((int(r.sum()) for r in HX), default=0),
                 max((int(r.sum()) for r in HZ), default=0)))
-    return {"spec": spec, "n": n, "k": int(k), "d": int(d), "w": w,
-            "fingerprint": fp}
+    rec = {"spec": spec, "n": n, "k": int(k), "d": int(d), "w": w,
+           "fingerprint": fp}
+    if wl is not None:
+        rec["board_wl"] = wl
+    return rec
 
 
 def _batches(it, size):
@@ -102,7 +175,8 @@ def _batches(it, size):
 def screen(candidates, *, min_k=1, min_d=1, trials=400, seed=0,
            metric=efficiency, keep=None, verbose=False, backend="numpy",
            threads=1, workers=1, threads_per_candidate=None, batch=64,
-           distance=None, distance_kwargs=None):
+           distance=None, distance_kwargs=None, board="flag", index=None,
+           audit=None):
     """Screen an iterable of ``(spec, HX, HZ)`` candidates.
 
     ``spec`` is any JSON-serializable description of how the code was built (a
@@ -113,6 +187,19 @@ def screen(candidates, *, min_k=1, min_d=1, trials=400, seed=0,
     ``{spec, n, k, d, efficiency, fingerprint}`` sorted by score (best first),
     deduplicated by fingerprint, truncated to ``keep`` if given. ``backend`` and
     ``threads`` control the optional accelerated distance screen.
+
+    Before the distance screen is spent on a candidate, two of the gate's
+    refusals are made here (issue #3620, ``prescreen``): a direct sum, whose
+    stabilizer group splits into independent blocks on disjoint qubits, is
+    dropped, and so is a code whose fingerprint the board already holds. A
+    candidate sharing a board entry's WL signature (a probable permutation of
+    it) is kept and carries that entry as ``board_wl`` on its record under
+    ``board="flag"`` (the default), dropped under ``board="drop"``, and not
+    looked up under ``board=None``. ``index`` injects a board index in place
+    of ``prescreen.board_index()``. Pass ``audit`` as a dict to receive the
+    count of every outcome (``PREPASS_COUNTS``): a high
+    ``rejected_disconnected`` is a generator bug, a high ``flagged_board_wl``
+    a family the board already covers.
 
     ``distance`` replaces the estimator with any callable of the shape
     ``(HX, HZ, *, trials, seed, backend, threads) -> d``, returning
@@ -148,17 +235,21 @@ def screen(candidates, *, min_k=1, min_d=1, trials=400, seed=0,
             "machine; parallelize across candidates for a sweep, or across "
             "threads for a few finalists, not both")
 
+    tally, index = _board_setup(board, index, audit)
+
     def _record(rec):
         rec["efficiency"] = round(float(metric(rec["n"], rec["k"], rec["d"])), 4)
         if verbose:
+            flag = f"  ~ {rec['board_wl']}" if "board_wl" in rec else ""
             print(f"  [[{rec['n']},{rec['k']},{rec['d']}]] "
-                  f"eff={rec['efficiency']:.3f}  {rec['spec']}")
+                  f"eff={rec['efficiency']:.3f}  {rec['spec']}{flag}")
         return rec
 
     seen = {}
-    jobs = ((spec, HX, HZ, min_k, min_d, trials, seed, backend,
+    jobs = ((spec, HX, HZ, k, fp, wl, min_d, trials, seed, backend,
              threads_per_candidate, distance, distance_kwargs)
-            for spec, HX, HZ in candidates)
+            for spec, HX, HZ, k, fp, wl in _prepass(
+                candidates, min_k=min_k, board=board, index=index, tally=tally))
 
     if workers == 1:
         for job in jobs:
@@ -196,7 +287,7 @@ def screen(candidates, *, min_k=1, min_d=1, trials=400, seed=0,
 def screen_adaptive(candidates, *, stages=(400, 20_000, 200_000), target=None,
                     min_k=1, min_d=1, metric=efficiency, keep=None,
                     seed=0, backend="numpy", threads=1, audit=None,
-                    verbose=False):
+                    verbose=False, board="flag", index=None):
     """Screen in widening stages, dropping what cannot reach ``target``.
 
     ``screen`` spends its whole trial budget on every candidate, including the
@@ -218,27 +309,24 @@ def screen_adaptive(candidates, *, stages=(400, 20_000, 200_000), target=None,
 
     Pass ``audit`` as a dict to receive per-stage ``promoted`` and ``rejected``
     counts, plus ``trials_spent`` against ``trials_flat``, the budget a flat
-    ``screen`` at the deepest stage would have spent.
+    ``screen`` at the deepest stage would have spent, and the pre-pass counts
+    ``screen`` reports (``PREPASS_COUNTS``). ``board`` and ``index`` are
+    ``screen``'s: the same direct-sum and board checks run on every candidate
+    before the first stage.
     """
-    tally = audit if audit is not None else {}
+    tally, index = _board_setup(board, index, audit)
     tally.setdefault("promoted", [])
     tally.setdefault("rejected", [])
     tally.setdefault("trials_spent", 0)
 
-    live, seen = [], set()
-    for spec, HX, HZ in candidates:
-        if not verify_css(HX, HZ):
-            continue
-        k = compute_k(HX, HZ)
-        if k < min_k:
-            continue
-        fp = fingerprint(HX, HZ)
-        if fp in seen:
-            continue
-        seen.add(fp)
-        live.append({"spec": spec, "HX": HX, "HZ": HZ, "k": int(k),
-                     "n": int(HX.shape[1]), "fp": fp, "d": None,
+    live = []
+    for spec, HX, HZ, k, fp, wl in _prepass(candidates, min_k=min_k,
+                                           board=board, index=index,
+                                           tally=tally):
+        live.append({"spec": spec, "HX": HX, "HZ": HZ, "k": k,
+                     "n": int(HX.shape[1]), "fp": fp, "wl": wl, "d": None,
                      "prep": None})
+    seen = {c["fp"] for c in live}
 
     for si, trials in enumerate(stages):
         if not live:
@@ -280,9 +368,12 @@ def screen_adaptive(candidates, *, stages=(400, 20_000, 200_000), target=None,
     for c in live:
         w = int(max(*(int(r.sum()) for r in c["HX"]),
                     *(int(r.sum()) for r in c["HZ"])))
-        out.append({"spec": c["spec"], "n": c["n"], "k": c["k"], "d": c["d"],
-                    "w": w, "fingerprint": c["fp"],
-                    "efficiency": round(float(metric(c["n"], c["k"], c["d"])), 4)})
+        rec = {"spec": c["spec"], "n": c["n"], "k": c["k"], "d": c["d"],
+               "w": w, "fingerprint": c["fp"],
+               "efficiency": round(float(metric(c["n"], c["k"], c["d"])), 4)}
+        if c["wl"] is not None:
+            rec["board_wl"] = c["wl"]
+        out.append(rec)
     out.sort(key=lambda r: r["efficiency"], reverse=True)
     return out[:keep] if keep else out
 

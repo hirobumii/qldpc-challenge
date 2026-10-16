@@ -28,7 +28,7 @@ a different candidate, and `unique_path` gives the second one its own name.
 ## The loop
 
 ```
-  pick a direction ─▶ build (HX,HZ) ─▶ estimate distance ─▶ package ─▶ VALIDATE ─▶ stage
+  pick a direction ─▶ build (HX,HZ) ─▶ prescreen ─▶ estimate distance ─▶ package ─▶ VALIDATE ─▶ stage
 ```
 
 ```bash
@@ -81,6 +81,14 @@ uv run --extra research python research/kit/coordination.py gate <the path it pr
 
 Exit 0 and `passed: true`, or it is not a find. The gate is the expensive step,
 so screen widely and spend it only on survivors.
+
+Two of the gate's refusals cost nothing to make yourself: a direct sum (a
+stabilizer group in independent blocks on disjoint qubits) and a code the board
+already holds. `search.screen` makes both before spending the distance screen
+and flags a Weisfeiler-Leman signature match as `board_wl`,
+`submit.make_submission` refuses to package a direct sum, and
+`uv run python research/kit/prescreen.py <path>` repeats them on a staged file
+(issue #3620).
 
 That command runs `verify/validate_candidate.py` unchanged and writes the
 verdict it returned to `<the path>.verdict.json`, beside the candidate.

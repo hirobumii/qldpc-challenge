@@ -227,6 +227,33 @@ The `trials` value is backend-specific: NumPy iterations and fast RIS samples ar
 not comparable screening budgets. All screening values remain upper bounds, and
 finalists must still pass the validation gate.
 
+**Two refusals the gate makes before any distance work, `screen` makes for you**
+(`kit/prescreen.py`, issue #3620). A candidate whose stabilizer group splits into
+independent blocks on disjoint qubits is a direct sum, not one code, and the gate
+refuses it structurally; 25 of the 64 gate runs at `n <= 64` in the ten days before
+that issue died this way, most of them from one small-torus generator whose
+arithmetic-progression supports decoupled the lattice. A candidate whose fingerprint
+the board already holds is a duplicate, and one that shares a board entry's
+Weisfeiler-Leman signature is probably a permutation of it; the weight-6 band drew
+ten such flags in the same window, each a gate run spent re-deriving a board code.
+`screen` and `screen_adaptive` drop the first two and carry the third as `board_wl`
+on the record (`board="drop"` drops it too, `board=None` skips the board), and
+count every outcome in `audit=`:
+
+```python
+audit = {}
+records = screen(my_generator(), min_k=4, min_d=4, trials=250, audit=audit)
+audit   # candidates, rejected_disconnected, rejected_board_exact,
+        # rejected_board_wl, flagged_board_wl, rejected_repeat, ...
+```
+
+A high `rejected_disconnected` is a generator bug: fix the index set, not the
+filter. A high `flagged_board_wl` says the family is already dense on the board
+and the budget belongs elsewhere. The checks are the verifier's own arithmetic
+imported from `verify/` (`_stabilizer_block_count`, `css_fingerprint`,
+`signature`) run against the gate's own board index, so they decide exactly what
+the gate decides and nothing the gate would not.
+
 **Check a sampler's reach before you sweep it.** Each of the four samplers above carries its
 ceiling at the end of its docstring, and the binding one is usually the *check weight*, not `n`.
 Measured over 3000 draws each at their defaults:
@@ -410,6 +437,11 @@ Run `validate_candidate` on the packaged doc (see **The one rule** above). Keep 
 `passed: true`. The verdict's `gates` are your evidence; its `labels` are what you show the
 human. This — not the surrogate, not your own judgment — is what decides whether you have a find.
 
+Before you pay for the gate on a staged file, `uv run python research/kit/prescreen.py <path>`
+repeats the two cheap refusals (one connected code, not already on the board) and exits 1 when
+the gate would refuse the candidate for either. `make_submission` already refuses to package a
+direct sum, so a staged file normally fails this only when the board moved under it.
+
 The random distance search inside the gate is the expensive part, so do not pay twice for the
 same answer:
 
@@ -529,6 +561,13 @@ rather than a missing flag.
   worth submitting once re-measured.
 - **Not beating a leader is not a failure.** A board-advancing code that beats no entry
   extends the frontier and is worth submitting. Report it as board-advancing, not as a loss.
+- **A direct sum is not a code** (issue #3620). A generator whose supports decouple the lattice
+  builds independent blocks whose `[[n,k,d]]` is a sum over blocks, and the gate refuses it before
+  any distance work. `screen` drops these and `make_submission` refuses to package one; a high
+  `rejected_disconnected` in `screen`'s audit is the generator's bug, not the filter's.
+- **Weight-6 and small `n` mostly re-derive the board.** A WL-signature match (`board_wl` on a
+  `screen` record) is a gate run that would likely come back `possibly equivalent`. Treat a
+  family whose flags pile up as saturated and move the budget.
 
 ## Field notes
 
@@ -592,7 +631,8 @@ something the next one should not have to re-learn.
 | `kit/group_algebra.py` | `build_2bga` + group builders: `perm_group`, `cyclic_product`, `dihedral`, `metacyclic`, `sym`, `alt`; `small_group` reads a committed GAP SmallGroup table from `kit/groups/` (exported by `kit/groups/cayley_table.g`), `build_2bga_small_group` is its recipe form |
 | `kit/coset.py` | `build_coset` + `subgroup_closure`, `left_cosets`, `normalizer` |
 | `kit/surrogate.py` | `distance_rand`, `lightest_logical` (witnesses), `mixed_volume` (k upper bound) |
-| `kit/search.py` | `screen`, `pareto_frontier`, `update_leaderboard` (the funnel) + samplers: `sample_bb`, `sample_dihedral`, `sample_metacyclic`, `sample_kasai_affine` (all capped at check weight 8 by default), `sample_cyclic_gb` (designed k, check weight 24 to 32; section 3c) |
+| `kit/search.py` | `screen`, `screen_adaptive`, `pareto_frontier`, `update_leaderboard` (the funnel; `audit=` counts what the pre-pass dropped, `board=` sets how a board match is handled) + samplers: `sample_bb`, `sample_dihedral`, `sample_metacyclic`, `sample_kasai_affine` (all capped at check weight 8 by default), `sample_cyclic_gb` (designed k, check weight 24 to 32; section 3c) |
+| `kit/prescreen.py` | `block_structure`, `identity`, `board_index`, `lookup`, `prescreen`: the two refusals the gate makes before any distance work (a direct sum, a code the board holds) and the WL flag it admits with, decided with the verifier's own arithmetic against the gate's own board index (issue #3620). Run on a staged file: `python research/kit/prescreen.py <path>` |
 | `kit/escalation.py` | `rung_brief`, `apply_verdict`, `append_journal`, `exact_first` (certify small CSS candidates before the first deep rung) — the rung-boundary escalation gate (step 3b): deterministic ladder facts + fenced judgment-model verdict; advisory only, never repo evidence |
 | `kit/submit.py` | `make_submission`, `save_submission`, `validate`, `write_repro_manifest` (the `repro/<slug>.json` recipe for `qldpc reproduce`) |
 | `kit/rebuild.py` | runs a `{constructor, params}` recipe and prints the verifier's fingerprint; the construction stage of `qldpc reproduce` |

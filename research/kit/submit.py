@@ -3,6 +3,10 @@
 Given the two parity-check matrices and a little provenance, this:
   * recomputes n and k and asserts CSS commutation (the same facts the verifier
     checks), so a doc it returns will not fail those gates;
+  * refuses a direct sum, a stabilizer group that splits into independent
+    blocks on disjoint qubits, with the verifier's own block count
+    (``prescreen.block_structure``), since the gate refuses one before any
+    distance work (issue #3620);
   * extracts the lightest X- and Z-logical *witnesses* with ``surrogate`` and
     asserts each one passes the verifier's witness test (in ker of the opposite
     checks, outside the rowspace of its own checks, weight == claimed value);
@@ -28,6 +32,7 @@ import sys
 import numpy as np
 from coordination import CandidateCollision, holds_same_candidate
 from css import commutes, compute_k, in_rowspace, verify_css
+from prescreen import block_structure, describe_structure
 from surrogate import lightest_logical
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -140,6 +145,14 @@ def make_submission(HX, HZ, *, name, construction, authors, family=None,
     HX = np.asarray(HX, dtype=np.int8) % 2
     HZ = np.asarray(HZ, dtype=np.int8) % 2
     assert verify_css(HX, HZ), "CSS commutation H_X H_Z^T = 0 fails"
+    structure = block_structure(HX, HZ)
+    if not structure["connected"]:
+        raise ValueError(
+            "not one code: " + describe_structure(structure) + ". The gate "
+            "refuses a direct sum (its tanner_connected and "
+            "stabilizer_group_connected checks), so it is not packaged. Build "
+            "each block as its own candidate, or filter the generator with "
+            "prescreen.block_structure (issue #3620)")
     n = HX.shape[1]
     k = compute_k(HX, HZ)
 
