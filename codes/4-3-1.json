@@ -1,0 +1,45 @@
+{
+ "schema_version": "0.1",
+ "name": "[[4,3,1]]",
+ "code_type": "CSS",
+ "n": 4,
+ "k": 3,
+ "checks": {
+  "X": [
+   [
+    0,
+    1,
+    2,
+    3
+   ]
+  ],
+  "Z": []
+ },
+ "distance": {
+  "d": 1,
+  "X": {
+   "value": 1,
+   "confidence": "upper_bound",
+   "witness": [
+    3
+   ]
+  },
+  "Z": {
+   "value": 2,
+   "confidence": "upper_bound",
+   "witness": [
+    1,
+    3
+   ]
+  }
+ },
+ "provenance": {
+  "authors": [
+   "@MathysRennela"
+  ],
+  "construction": "C-DELETE-CHECK b1 from 4-2-2.json",
+  "origin": "submission",
+  "date": "2026-10-19",
+  "model": "Beam 1.0"
+ }
+}

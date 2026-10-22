@@ -1,0 +1,94 @@
+{
+ "schema_version": "0.2",
+ "name": "repair 8-3-2-b",
+ "code_type": "CSS",
+ "n": 8,
+ "k": 3,
+ "checks": {
+  "X": [
+   [
+    4,
+    5,
+    6,
+    7
+   ],
+   [
+    0,
+    1,
+    4,
+    5
+   ],
+   [
+    2,
+    3
+   ]
+  ],
+  "Z": [
+   [
+    0,
+    1,
+    2,
+    3
+   ],
+   [
+    4,
+    5,
+    6,
+    7
+   ]
+  ]
+ },
+ "distance": {
+  "d": 2,
+  "X": {
+   "value": 2,
+   "confidence": "upper_bound",
+   "witness": [
+    5,
+    7
+   ],
+   "witness_provenance": {
+    "found_by": [
+     "@MathysRennela"
+    ],
+    "date": "2026-10-19",
+    "found_at_samples": 100,
+    "survived_samples": 100,
+    "tool": "research/kit/surrogate.lightest_logical",
+    "seeds": [
+     1
+    ]
+   }
+  },
+  "Z": {
+   "value": 2,
+   "confidence": "upper_bound",
+   "witness": [
+    4,
+    5
+   ],
+   "witness_provenance": {
+    "found_by": [
+     "@MathysRennela"
+    ],
+    "date": "2026-10-19",
+    "found_at_samples": 100,
+    "survived_samples": 100,
+    "tool": "research/kit/surrogate.lightest_logical",
+    "seeds": [
+     2
+    ]
+   }
+  }
+ },
+ "provenance": {
+  "authors": [
+   "@MathysRennela"
+  ],
+  "construction": "repair of codes/8-4-1.json by adding one X-check [2, 3]",
+  "references": [],
+  "date": "2026-10-19",
+  "notes": "",
+  "model": "Beam 1.0"
+ }
+}

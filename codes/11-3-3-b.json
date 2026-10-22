@@ -1,0 +1,102 @@
+{
+ "schema_version": "0.5",
+ "name": "graft-0-X",
+ "code_type": "CSS",
+ "n": 11,
+ "k": 3,
+ "checks": {
+  "X": [
+   [
+    2,
+    5,
+    6,
+    10
+   ],
+   [
+    0,
+    3,
+    4,
+    5,
+    7,
+    10
+   ],
+   [
+    3,
+    4,
+    8,
+    9
+   ],
+   [
+    0,
+    1,
+    3,
+    6,
+    8,
+    10
+   ]
+  ],
+  "Z": [
+   [
+    1,
+    6,
+    7,
+    8,
+    9,
+    10
+   ],
+   [
+    2,
+    4,
+    6,
+    7,
+    8
+   ],
+   [
+    1,
+    3,
+    5,
+    6,
+    8
+   ],
+   [
+    0,
+    2,
+    5,
+    8,
+    9
+   ]
+  ]
+ },
+ "distance": {
+  "d": 3,
+  "X": {
+   "value": 3,
+   "confidence": "upper_bound",
+   "witness": [
+    0,
+    2,
+    4
+   ]
+  },
+  "Z": {
+   "value": 3,
+   "confidence": "upper_bound",
+   "witness": [
+    0,
+    1,
+    7
+   ]
+  }
+ },
+ "provenance": {
+  "authors": [
+   "@MathysRennela"
+  ],
+  "model": "Beam 1.0",
+  "novelty": "known_parameters",
+  "origin": "submission",
+  "date": "2026-10-19",
+  "construction": "E-GRAFT",
+  "notes": "Construction found with an unreleased code calculus tool using the E-GRAFT technique. Distance is reported only with witness-backed upper bounds."
+ }
+}

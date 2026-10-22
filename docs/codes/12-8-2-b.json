@@ -1,0 +1,102 @@
+{
+ "schema_version": "0.2",
+ "name": "repair 12-8-2-b",
+ "code_type": "CSS",
+ "n": 12,
+ "k": 8,
+ "checks": {
+  "X": [
+   [
+    0,
+    1,
+    2,
+    3,
+    6,
+    7,
+    8,
+    9
+   ],
+   [
+    4,
+    5,
+    10,
+    11
+   ]
+  ],
+  "Z": [
+   [
+    0,
+    1,
+    2,
+    3,
+    6,
+    7,
+    8,
+    9
+   ],
+   [
+    2,
+    3,
+    4,
+    5,
+    8,
+    9,
+    10,
+    11
+   ]
+  ]
+ },
+ "distance": {
+  "d": 2,
+  "X": {
+   "value": 2,
+   "confidence": "upper_bound",
+   "witness": [
+    3,
+    8
+   ],
+   "witness_provenance": {
+    "found_by": [
+     "@MathysRennela"
+    ],
+    "date": "2026-10-19",
+    "found_at_samples": 100,
+    "survived_samples": 100,
+    "tool": "research/kit/surrogate.lightest_logical",
+    "seeds": [
+     1
+    ]
+   }
+  },
+  "Z": {
+   "value": 2,
+   "confidence": "upper_bound",
+   "witness": [
+    1,
+    2
+   ],
+   "witness_provenance": {
+    "found_by": [
+     "@MathysRennela"
+    ],
+    "date": "2026-10-19",
+    "found_at_samples": 100,
+    "survived_samples": 100,
+    "tool": "research/kit/surrogate.lightest_logical",
+    "seeds": [
+     2
+    ]
+   }
+  }
+ },
+ "provenance": {
+  "authors": [
+   "@MathysRennela"
+  ],
+  "construction": "repair of codes/12-9-1.json by adding one X-check [4, 5, 10, 11]",
+  "references": [],
+  "date": "2026-10-19",
+  "notes": "",
+  "model": "Beam 1.0"
+ }
+}
